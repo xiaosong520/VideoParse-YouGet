@@ -10,7 +10,8 @@ import xyz.yhsj.parse.match1
 import xyz.yhsj.parse.matchAll
 import xyz.yhsj.parse.utils.HttpRequest
 
-/**QQ视频
+/**
+ * QQ视频
  * Created by ZengSong on 2017-5-8
  */
 object QQ : Parse {
@@ -25,20 +26,26 @@ object QQ : Parse {
     fun downloadByiteSite(sourceUrl: String): ParseResult {
         var url = sourceUrl
 
-        //全民k歌
+        /**
+         *全民k歌
+         */
         if ("kg.qq.com" in url || "kg2.qq.com" in url) {
             val chars = url.split("?s=")
             val shareid = chars[chars.lastIndex]
-
-            return kg_qq_download_by_shareid(shareid)//返回实体数据
+            return kg_qq_download_by_shareid(shareid)//解析方法
         }
 
-        //腾讯直播
+        /**
+         *腾讯直播
+         */
         if ("live.qq.com" in url) {
             return ParseResult()//暂无处理
         }
 
-        if ("mp.weixin.qq.com/s" in url) {//微信网页
+        /**
+         *微信网页
+         */
+        if ("mp.weixin.qq.com/s" in url) {
             val content = HttpRequest.get(url).body()
             val vids = "\\bvid=(\\w+)".matchAll(content)
 
@@ -51,7 +58,7 @@ object QQ : Parse {
 
         if ("v.qq.com/page" in url) {
             val content = HttpRequest.get(url).followRedirects(true).body()
-            println(content)
+            /*println(content)*/
             url = "href=\"(.*?)\"".match1(content) ?: ""
         }
 
@@ -59,21 +66,24 @@ object QQ : Parse {
         if ("kuaibao.qq.com" in url || "http://daxue.qq.com/content/content/id/\\d+".match1(url) != null) {
             val content = HttpRequest.get(url).body()
             val vid = "vid\\s*=\\s*\"\\s*([^\"]+)\"".match1(content)
-            val title = "title\">([^\"]+)</p>".match1(content)
+            //val title = "title\">([^\"]+)</p>".match1(content)
+            return qq_download_by_vid(vid ?: "")
         } else if ("iframe/player.html" in url) {
+            //for embedded URLs; don't know what the title is
             val vid = "\\bvid=(\\w+)".match1(url)
-            val title = vid
-        } else {
+            //val title = vid
+            return qq_download_by_vid(vid ?: "")
+        } else {//其他
             val content = HttpRequest.get(url).body()
             val vid = "\\bvid=(\\w+)".match1(url)
             val vid2 = "vid\"*\\s*:\\s*\"\\s*([^\"]+)\"".match1(content)
             return qq_download_by_vid(vid ?: vid2 ?: "")
         }
-        return ParseResult()
+        
     }
 
     /**
-     * 通过id获取视频
+     * 通过vid获取视频
      */
     fun qq_download_by_vid(vid: String) :ParseResult{
         val info_api = "http://vv.video.qq.com/getinfo?otype=json&appver=3%2E2%2E19%2E333&platform=11&defnpayver=1&vid=$vid"
@@ -118,10 +128,9 @@ object QQ : Parse {
             val part_format_id = part_format.getInt("id")
             val part_format_sl = part_format.getInt("sl")
 
-            if (part_format_sl == 0) {
-                val mediaUrl = MediaUrl(parts_ti)
-               /* val part_urls =  ArrayList<String>()*/
+            val mediaUrl = MediaUrl(parts_ti)//保存视频标题
 
+            if (part_format_sl == 0) {
                 try {
                     for (part in 1..100) {//视频片段伪装请求，由于具体有多少段不知道，for 1-100循环，直到抛异常结束
                         val filename = "$vid.p${part_format_id % 10000}.$part.mp4"
@@ -135,45 +144,45 @@ object QQ : Parse {
                         val vkey = part_info.getString("key")
                         val url = "$parts_prefix/$filename?vkey=$vkey"
                         mediaUrl.playUrl.add(url)
-                      /*  part_urls.add(url)*/
                     }
 
                 } catch (e: Exception) {
                     //视频url碎片列表添加（每段url的时长<=5min,后期需要处理把它们拼接起来）
-                    /*mediaFile.urlList = part_urls*/
                     mediaFile.urlList.add(mediaUrl)
                 }
 
-            } else {
-                //下面是有问题的/只取了一段视频,以后再改
+            } else {// sl = 1 的情况
+                //只取了清晰度最高的视频（以后可以再改）
                 val fvkey = info.getJSONObject("vl").getJSONArray("vi").getJSONObject(0).getString("fvkey")
                 var mp4: JSONArray? = null
 
-                var mp4url: String = ""
+                var mp4url: String =""
 
                 try {
                     mp4 = info.getJSONObject("vl").getJSONArray("vi").getJSONObject(0).getJSONObject("cl").getJSONArray("ci")
                 } catch (e: Exception) {
                 }
+
                 if (mp4 != null) {
-                    // 加入for循环
+                    // 后续加入for循环 来获取所有视频链接
                     val old_id = mp4.getJSONObject(0).getString("keyid").split('.')[1]
                     val new_id = "p${(old_id.toIntOrNull() ?: 1) % 1000}"
                     mp4url = mp4.getJSONObject(0).getString("keyid").replace(old_id, new_id) + ".mp4"
-
                 } else {
                     mp4url = info.getJSONObject("vl").getJSONArray("vi").getJSONObject(0).getString("fn")
                 }
 
                 val url = "$parts_prefix/$mp4url?vkey=$fvkey"
                 println("else " + url)
+                mediaUrl.playUrl.add(url)
+                mediaFile.urlList.add(mediaUrl)
             }
         }
         return ParseResult(data = mediaFile)//返回实体数据
     }
 
     /**
-     * 全民k歌下载
+     * 全民k歌解析
      */
     fun kg_qq_download_by_shareid(shareid: String): ParseResult {
         val BASE_URL = "http://cgi.kg.qq.com/fcgi-bin/kg_ugc_getdetail"

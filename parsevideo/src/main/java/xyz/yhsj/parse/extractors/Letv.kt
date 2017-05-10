@@ -18,12 +18,10 @@ object Letv : Parse {
 
     override fun parseResult(sourceUrl: String): ParseResult {
         try {
-
             val vid = getId(sourceUrl)
             if (vid.isNullOrBlank()) {
                 return ParseResult(code = 500, msg = "获取视频id失败")
             }
-
             return letv_download_by_vid(vid)
         } catch (e: Exception) {
             return ParseResult(code = 500, msg = e.message ?: "")
